@@ -12,6 +12,15 @@
 #include "Defines\CMaNGOS.h"
 #include "Defines\VMaNGOS.h"
 
+std::string EscapeString(char const* unescapedString)
+{
+    char* escapedString = new char[strlen(unescapedString) * 2 + 1];
+    mysql_escape_string(escapedString, unescapedString, strlen(unescapedString));
+    std::string returnString = escapedString;
+    delete[] escapedString;
+    return returnString;
+}
+
 Database GameDb;
 
 std::string MakeConnectionString()
@@ -50,8 +59,8 @@ std::string MakeConnectionString()
     return mysql_host + ";" + mysql_port + ";" + mysql_user + ";" + mysql_pass + ";" + mysql_db;
 }
 
-std::unordered_map<uint32, CMaNGOS::EventAISummon> g_SummonsMap;
-std::unordered_map<uint32, std::string> g_NamesMap;
+std::unordered_map<uint32, CMaNGOS::EventAISummon> g_summonPositions;
+std::unordered_map<uint32, std::string> g_creatureNames;
 
 bool ProcessEvent(uint32 id, uint32& event_type, int32& event_param1, int32& event_param2, int32& event_param3, int32& event_param4, uint32& condition_id)
 {
@@ -85,19 +94,69 @@ bool ProcessEvent(uint32 id, uint32& event_type, int32& event_param1, int32& eve
     return true;
 }
 
-uint32 ConvertTargetType(uint32 target)
+void ConvertTargetType(uint32 targetType, uint32& outTargetType, uint32& outTargetParam1, uint32 outTargetParam2, uint32* outFlags)
 {
-    switch (target)
+    switch (targetType)
     {
-        case CMaNGOS::TARGET_T_ACTION_INVOKER:
-            return VMaNGOS::TARGET_T_PROVIDED_TARGET;
         case CMaNGOS::TARGET_T_SELF:
-            return VMaNGOS::TARGET_T_OWNER_OR_SELF;
+            outTargetType = VMaNGOS::TARGET_T_PROVIDED_TARGET;
+            if (outFlags)
+                *outFlags = VMaNGOS::SF_GENERAL_TARGET_SELF;
+            break;
+        case CMaNGOS::TARGET_T_HOSTILE:
+        case CMaNGOS::TARGET_T_PLAYER_INVOKER:
+        case CMaNGOS::TARGET_T_PLAYER_TAPPED:
+        case CMaNGOS::TARGET_T_NONE:
+            outTargetType = VMaNGOS::TARGET_T_HOSTILE;
+            break;
+        case CMaNGOS::TARGET_T_HOSTILE_SECOND_AGGRO:
+            outTargetType = VMaNGOS::TARGET_T_HOSTILE_SECOND_AGGRO;
+            break;
+        case CMaNGOS::TARGET_T_HOSTILE_LAST_AGGRO:
+            outTargetType = VMaNGOS::TARGET_T_HOSTILE_LAST_AGGRO;
+            break;
+        case CMaNGOS::TARGET_T_HOSTILE_RANDOM:
+            outTargetType = VMaNGOS::TARGET_T_HOSTILE_RANDOM;
+            break;
+        case CMaNGOS::TARGET_T_HOSTILE_RANDOM_NOT_TOP:
+            outTargetType = VMaNGOS::TARGET_T_HOSTILE_RANDOM_NOT_TOP;
+            break;
+        case CMaNGOS::TARGET_T_ACTION_INVOKER:
+        case CMaNGOS::TARGET_T_EVENT_SENDER:
+        case CMaNGOS::TARGET_T_EVENT_SPECIFIC:
+            // should not happen for timer events
+            outTargetType = VMaNGOS::TARGET_T_PROVIDED_TARGET;
+            break;
+        case CMaNGOS::TARGET_T_ACTION_INVOKER_OWNER:
+        case CMaNGOS::TARGET_T_SPAWNER:
+            outTargetType = VMaNGOS::TARGET_T_OWNER;
+            break;
+        case CMaNGOS::TARGET_T_HOSTILE_RANDOM_PLAYER:
+            outTargetType = VMaNGOS::TARGET_T_HOSTILE_RANDOM;
+            outTargetParam1 = VMaNGOS::SELECT_FLAG_PLAYER;
+            break;
+        case CMaNGOS::TARGET_T_HOSTILE_RANDOM_NOT_TOP_PLAYER:
+            outTargetType = VMaNGOS::TARGET_T_HOSTILE_RANDOM_NOT_TOP;
+            outTargetParam1 = VMaNGOS::SELECT_FLAG_PLAYER;
+            break;
+        case CMaNGOS::TARGET_T_HOSTILE_RANDOM_MANA:
+            outTargetType = VMaNGOS::TARGET_T_HOSTILE_RANDOM;
+            outTargetParam1 = VMaNGOS::SELECT_FLAG_NO_TOTEM | VMaNGOS::SELECT_FLAG_POWER_MANA;
+            break;
+        case CMaNGOS::TARGET_T_NEAREST_AOE_TARGET:
+            outTargetType = VMaNGOS::TARGET_T_HOSTILE_RANDOM;
+            break;
+        case CMaNGOS::TARGET_T_HOSTILE_FARTHEST_AWAY:
+            outTargetType = VMaNGOS::TARGET_T_HOSTILE_RANDOM;
+            outTargetParam1 = VMaNGOS::SELECT_FLAG_NO_TOTEM | VMaNGOS::SELECT_FLAG_NOT_IN_MELEE_RANGE;
+            break;
+        default:
+            printf("Error: Cannot convert spell target type %u!\n", targetType);
+            break;
     }
-    return target;
 }
 
-bool g_TextsWarning = false;
+bool g_textsWarning = false;
 
 VMaNGOS::ScriptInfo* ProcessAction(uint32 id, uint32 action_type, int32 action_param1, int32 action_param2, int32 action_param3)
 {
@@ -113,7 +172,7 @@ VMaNGOS::ScriptInfo* ProcessAction(uint32 id, uint32 action_type, int32 action_p
             pScriptInfo->talk.textId[1] = action_param2;
             pScriptInfo->talk.textId[2] = action_param3;
             pScriptInfo->comment = "Say Text";
-            g_TextsWarning = true;
+            g_textsWarning = true;
             return pScriptInfo;
         }
         case CMaNGOS::ACTION_T_SET_FACTION:
@@ -154,7 +213,7 @@ VMaNGOS::ScriptInfo* ProcessAction(uint32 id, uint32 action_type, int32 action_p
         {
             pScriptInfo = new VMaNGOS::ScriptInfo();
             pScriptInfo->command = VMaNGOS::SCRIPT_COMMAND_EMOTE;
-            pScriptInfo->emote.emoteId = action_param1;
+            pScriptInfo->emote.emoteId[0] = action_param1;
             pScriptInfo->comment = "Emote";
             return pScriptInfo;
         }
@@ -168,9 +227,9 @@ VMaNGOS::ScriptInfo* ProcessAction(uint32 id, uint32 action_type, int32 action_p
         {
             pScriptInfo = new VMaNGOS::ScriptInfo();
             pScriptInfo->command = VMaNGOS::SCRIPT_COMMAND_EMOTE;
-            pScriptInfo->emote.emoteId = action_param1;
-            pScriptInfo->emote.randomEmotes[0] = action_param2;
-            pScriptInfo->emote.randomEmotes[1] = action_param3;
+            pScriptInfo->emote.emoteId[0] = action_param1;
+            pScriptInfo->emote.emoteId[1] = action_param2;
+            pScriptInfo->emote.emoteId[2] = action_param3;
             pScriptInfo->comment = "Random Emote";
             return pScriptInfo;
         }
@@ -180,13 +239,7 @@ VMaNGOS::ScriptInfo* ProcessAction(uint32 id, uint32 action_type, int32 action_p
             pScriptInfo->command = VMaNGOS::SCRIPT_COMMAND_CAST_SPELL;
             pScriptInfo->castSpell.spellId = action_param1;
 
-            if (action_param2 == CMaNGOS::TARGET_T_SELF)
-                pScriptInfo->raw.data[4] |= VMaNGOS::SF_GENERAL_TARGET_SELF;
-
-            else if (action_param2 == CMaNGOS::TARGET_T_ACTION_INVOKER)
-                pScriptInfo->target_type = VMaNGOS::TARGET_T_PROVIDED_TARGET;
-            else
-                pScriptInfo->target_type = action_param2;
+            ConvertTargetType(action_param2, pScriptInfo->target_type, pScriptInfo->target_param1, pScriptInfo->target_param2, &pScriptInfo->raw.data[4]);
 
             if (action_param3 & CMaNGOS::CAST_INTERRUPT_PREVIOUS)
                 pScriptInfo->castSpell.flags |= VMaNGOS::CF_INTERRUPT_PREVIOUS;
@@ -217,7 +270,8 @@ VMaNGOS::ScriptInfo* ProcessAction(uint32 id, uint32 action_type, int32 action_p
             pScriptInfo = new VMaNGOS::ScriptInfo();
             pScriptInfo->command = VMaNGOS::SCRIPT_COMMAND_TEMP_SUMMON_CREATURE;
             pScriptInfo->summonCreature.creatureEntry = action_param1;
-            pScriptInfo->summonCreature.attackTarget = ConvertTargetType(action_param2);
+            pScriptInfo->summonCreature.attackTarget = VMaNGOS::TARGET_T_PROVIDED_TARGET;
+            ConvertTargetType(action_param2, pScriptInfo->target_type, pScriptInfo->target_param1, pScriptInfo->target_param2, &pScriptInfo->raw.data[4]);
 
             if (action_param3) // despawn delay
                 pScriptInfo->summonCreature.despawnType = VMaNGOS::TEMPSUMMON_TIMED_OR_DEAD_DESPAWN;
@@ -235,7 +289,8 @@ VMaNGOS::ScriptInfo* ProcessAction(uint32 id, uint32 action_type, int32 action_p
             pScriptInfo->x = float(action_param1); // threat
 
             // target
-            pScriptInfo->modThreat.target = ConvertTargetType(action_param2);
+            pScriptInfo->modThreat.target = VMaNGOS::TARGET_T_PROVIDED_TARGET;
+            ConvertTargetType(action_param2, pScriptInfo->target_type, pScriptInfo->target_param1, pScriptInfo->target_param2, &pScriptInfo->raw.data[4]);
             
             pScriptInfo->comment = "Modify Target Threat";
             return pScriptInfo;
@@ -254,7 +309,7 @@ VMaNGOS::ScriptInfo* ProcessAction(uint32 id, uint32 action_type, int32 action_p
             pScriptInfo = new VMaNGOS::ScriptInfo();
             pScriptInfo->command = VMaNGOS::SCRIPT_COMMAND_QUEST_EXPLORED;
             pScriptInfo->questExplored.questId = action_param1;
-            pScriptInfo->target_type = ConvertTargetType(action_param2);
+            ConvertTargetType(action_param2, pScriptInfo->target_type, pScriptInfo->target_param1, pScriptInfo->target_param2, &pScriptInfo->raw.data[4]);
             pScriptInfo->questExplored.group = action_param3;
             pScriptInfo->comment = "Complete Quest";
             return pScriptInfo;
@@ -267,7 +322,7 @@ VMaNGOS::ScriptInfo* ProcessAction(uint32 id, uint32 action_type, int32 action_p
             pScriptInfo->command = VMaNGOS::SCRIPT_COMMAND_FIELD_SET;
             pScriptInfo->setField.fieldId = action_param1;
             pScriptInfo->setField.fieldValue = action_param2;
-            pScriptInfo->target_type = ConvertTargetType(action_param3);
+            ConvertTargetType(action_param3, pScriptInfo->target_type, pScriptInfo->target_param1, pScriptInfo->target_param2, &pScriptInfo->raw.data[4]);
             pScriptInfo->raw.data[4] |= VMaNGOS::SF_GENERAL_SWAP_FINAL_TARGETS;
             pScriptInfo->comment = "Set Field";
             return pScriptInfo;
@@ -279,7 +334,7 @@ VMaNGOS::ScriptInfo* ProcessAction(uint32 id, uint32 action_type, int32 action_p
             pScriptInfo->modFlags.fieldId = UNIT_FIELD_FLAGS;
             pScriptInfo->modFlags.fieldValue = action_param1;
             pScriptInfo->modFlags.mode = VMaNGOS::SO_MODIFYFLAGS_SET;
-            pScriptInfo->target_type = ConvertTargetType(action_param2);
+            ConvertTargetType(action_param2, pScriptInfo->target_type, pScriptInfo->target_param1, pScriptInfo->target_param2, &pScriptInfo->raw.data[4]);
             pScriptInfo->raw.data[4] |= VMaNGOS::SF_GENERAL_SWAP_FINAL_TARGETS;
             pScriptInfo->comment = "Set Flag";
             return pScriptInfo;
@@ -291,7 +346,7 @@ VMaNGOS::ScriptInfo* ProcessAction(uint32 id, uint32 action_type, int32 action_p
             pScriptInfo->modFlags.fieldId = UNIT_FIELD_FLAGS;
             pScriptInfo->modFlags.fieldValue = action_param1;
             pScriptInfo->modFlags.mode = VMaNGOS::SO_MODIFYFLAGS_REMOVE;
-            pScriptInfo->target_type = ConvertTargetType(action_param2);
+            ConvertTargetType(action_param2, pScriptInfo->target_type, pScriptInfo->target_param1, pScriptInfo->target_param2, &pScriptInfo->raw.data[4]);
             pScriptInfo->raw.data[4] |= VMaNGOS::SF_GENERAL_SWAP_FINAL_TARGETS;
             pScriptInfo->comment = "Remove Flag";
             return pScriptInfo;
@@ -373,7 +428,7 @@ VMaNGOS::ScriptInfo* ProcessAction(uint32 id, uint32 action_type, int32 action_p
             pScriptInfo = new VMaNGOS::ScriptInfo();
             pScriptInfo->command = VMaNGOS::SCRIPT_COMMAND_REMOVE_AURA;
             pScriptInfo->removeAura.spellId = action_param2;
-            pScriptInfo->target_type = ConvertTargetType(action_param1);
+            ConvertTargetType(action_param1, pScriptInfo->target_type, pScriptInfo->target_param1, pScriptInfo->target_param2, &pScriptInfo->raw.data[4]);
             pScriptInfo->raw.data[4] |= VMaNGOS::SF_GENERAL_SWAP_FINAL_TARGETS;
             pScriptInfo->comment = "Remove Aura";
             return pScriptInfo;
@@ -412,10 +467,17 @@ VMaNGOS::ScriptInfo* ProcessAction(uint32 id, uint32 action_type, int32 action_p
             pScriptInfo = new VMaNGOS::ScriptInfo();
             pScriptInfo->command = VMaNGOS::SCRIPT_COMMAND_TEMP_SUMMON_CREATURE;
             pScriptInfo->summonCreature.creatureEntry = action_param1;
-            pScriptInfo->summonCreature.attackTarget = ConvertTargetType(action_param2);
 
-            auto i = g_SummonsMap.find(action_param3);
-            if (i == g_SummonsMap.end())
+            if (action_param2 != CMaNGOS::TARGET_T_SELF)
+            {
+                pScriptInfo->summonCreature.attackTarget = VMaNGOS::TARGET_T_PROVIDED_TARGET;
+                ConvertTargetType(action_param2, pScriptInfo->target_type, pScriptInfo->target_param1, pScriptInfo->target_param2, &pScriptInfo->raw.data[4]);
+            }
+            else
+                pScriptInfo->summonCreature.attackTarget = -1;
+            
+            auto i = g_summonPositions.find(action_param3);
+            if (i == g_summonPositions.end())
                 break;
 
             pScriptInfo->summonCreature.despawnDelay = (*i).second.SpawnTimeSecs; // despawn_delay
@@ -439,7 +501,7 @@ VMaNGOS::ScriptInfo* ProcessAction(uint32 id, uint32 action_type, int32 action_p
             pScriptInfo = new VMaNGOS::ScriptInfo();
             pScriptInfo->command = VMaNGOS::SCRIPT_COMMAND_KILL_CREDIT;
             pScriptInfo->killCredit.creatureEntry = action_param1;
-            pScriptInfo->target_type = ConvertTargetType(action_param2);
+            ConvertTargetType(action_param2, pScriptInfo->target_type, pScriptInfo->target_param1, pScriptInfo->target_param2, &pScriptInfo->raw.data[4]);
             pScriptInfo->raw.data[4] |= VMaNGOS::SF_GENERAL_SWAP_FINAL_TARGETS;
             pScriptInfo->comment = "Grant Kill Credit";
             return pScriptInfo;
@@ -459,7 +521,7 @@ VMaNGOS::ScriptInfo* ProcessAction(uint32 id, uint32 action_type, int32 action_p
             pScriptInfo = new VMaNGOS::ScriptInfo();
             pScriptInfo->command = VMaNGOS::SCRIPT_COMMAND_SET_INST_DATA64;
             pScriptInfo->setData64.field = action_param1;
-            pScriptInfo->target_type = ConvertTargetType(action_param2);
+            ConvertTargetType(action_param2, pScriptInfo->target_type, pScriptInfo->target_param1, pScriptInfo->target_param2, &pScriptInfo->raw.data[4]);
             pScriptInfo->raw.data[4] |= VMaNGOS::SF_GENERAL_SWAP_FINAL_TARGETS;
             pScriptInfo->setData64.type = VMaNGOS::SO_INSTDATA64_SOURCE_GUID;
             pScriptInfo->comment = "Set Data 64";
@@ -470,7 +532,6 @@ VMaNGOS::ScriptInfo* ProcessAction(uint32 id, uint32 action_type, int32 action_p
             pScriptInfo = new VMaNGOS::ScriptInfo();
             pScriptInfo->command = VMaNGOS::SCRIPT_COMMAND_UPDATE_ENTRY;
             pScriptInfo->updateEntry.creatureEntry = action_param1;
-            pScriptInfo->updateEntry.team = action_param2;
             pScriptInfo->comment = "Update Entry";
             return pScriptInfo;
         }
@@ -552,7 +613,7 @@ VMaNGOS::ScriptInfo* ProcessAction(uint32 id, uint32 action_type, int32 action_p
             pScriptInfo->talk.textId[0] = action_param2;
             pScriptInfo->talk.textId[1] = action_param3;
             pScriptInfo->comment = "Say Text";
-            g_TextsWarning = true;
+            g_textsWarning = true;
             printf("Warning: Entry %u uses unsupported ACTION_T_CHANCED_TEXT. Replacing with SCRIPT_COMMAND_TALK.\n", id);
             return pScriptInfo;
         }
@@ -645,7 +706,7 @@ VMaNGOS::ScriptInfo* ProcessAction(uint32 id, uint32 action_type, int32 action_p
         {
             pScriptInfo = new VMaNGOS::ScriptInfo();
             pScriptInfo->command = VMaNGOS::SCRIPT_COMMAND_ATTACK_START;
-            pScriptInfo->target_type = ConvertTargetType(action_param1);
+            ConvertTargetType(action_param1, pScriptInfo->target_type, pScriptInfo->target_param1, pScriptInfo->target_param2, &pScriptInfo->raw.data[4]);
             pScriptInfo->comment = "Attack Start";
             return pScriptInfo;
         }
@@ -662,6 +723,106 @@ VMaNGOS::ScriptInfo* ProcessAction(uint32 id, uint32 action_type, int32 action_p
     }
 
     return nullptr;
+}
+
+std::unordered_map<uint32 /*creatureId*/, std::vector<VMaNGOS::CreatureSpellsEntry>> g_creatureSpellLists;
+
+void AddSpellCastToCreatureSpellsList(uint32 creatureId, uint32 eventChance, uint32 eventFlags, uint32 spellId, uint32 targetType, uint32 castFlags, uint32 delayInitialMin, uint32 delayInitialMax, uint32 delayRepeatMin, uint32 delayRepeatMax)
+{
+    VMaNGOS::CreatureSpellsEntry spellList;
+    spellList.spellId = spellId;
+    spellList.probability = eventChance;
+    spellList.delayInitialMin = delayInitialMin / 1000;
+    spellList.delayInitialMax = delayInitialMax / 1000;
+    spellList.delayRepeatMin = delayRepeatMin / 1000;
+    spellList.delayRepeatMax = delayRepeatMax / 1000;
+
+    ConvertTargetType(targetType, spellList.castTarget, spellList.targetParam1, spellList.targetParam2, nullptr);
+
+    if (castFlags & CMaNGOS::CAST_INTERRUPT_PREVIOUS)
+        spellList.castFlags |= VMaNGOS::CF_INTERRUPT_PREVIOUS;
+    if (castFlags & CMaNGOS::CAST_TRIGGERED)
+        spellList.castFlags |= VMaNGOS::CF_TRIGGERED;
+    if (castFlags & CMaNGOS::CAST_FORCE_CAST)
+        spellList.castFlags |= VMaNGOS::CF_FORCE_CAST;
+    if (castFlags & CMaNGOS::CAST_NO_MELEE_IF_OOM)
+        printf("Error: Unsupported cast flag CAST_NO_MELEE_IF_OOM for spell %u!\n", spellId);
+    if (castFlags & CMaNGOS::CAST_FORCE_TARGET_SELF)
+    {
+        spellList.castTarget = VMaNGOS::TARGET_T_PROVIDED_TARGET;
+        spellList.targetParam1 = 0;
+        spellList.targetParam2 = 0;
+    }
+    if (castFlags & CMaNGOS::CAST_AURA_NOT_PRESENT)
+        spellList.castFlags |= VMaNGOS::CF_AURA_NOT_PRESENT;
+    if (castFlags & CMaNGOS::CAST_IGNORE_UNSELECTABLE_TARGET)
+        printf("Error: Unsupported cast flag CAST_IGNORE_UNSELECTABLE_TARGET for spell %u!\n", spellId);
+    if (castFlags & CMaNGOS::CAST_SWITCH_CASTER_TARGET)
+        printf("Error: Unsupported cast flag CAST_SWITCH_CASTER_TARGET for spell %u!\n", spellId);
+    if (castFlags & CMaNGOS::CAST_MAIN_SPELL)
+        spellList.castFlags |= VMaNGOS::CF_MAIN_RANGED_SPELL;
+    if (castFlags & CMaNGOS::CAST_PLAYER_ONLY)
+    {
+        switch (spellList.castTarget)
+        {
+            case VMaNGOS::TARGET_T_HOSTILE_SECOND_AGGRO:
+            case VMaNGOS::TARGET_T_HOSTILE_LAST_AGGRO:
+            case VMaNGOS::TARGET_T_HOSTILE_RANDOM:
+            case VMaNGOS::TARGET_T_HOSTILE_RANDOM_NOT_TOP:
+                // these are the target types that support cast flags
+                break;
+            default:
+                spellList.castTarget = VMaNGOS::TARGET_T_HOSTILE_RANDOM;
+                spellList.targetParam1 = 0;
+                spellList.targetParam2 = 0;
+                break;
+        }
+
+        spellList.targetParam1 |= VMaNGOS::SELECT_FLAG_PLAYER;
+    }
+    if (castFlags & CMaNGOS::CAST_DISTANCE_YOURSELF)
+        printf("Error: Unsupported cast flag CAST_DISTANCE_YOURSELF for spell %u!\n", spellId);
+    if (castFlags & CMaNGOS::CAST_TARGET_CASTING)
+        spellList.castFlags |= VMaNGOS::CF_TARGET_CASTING;
+    if (castFlags & CMaNGOS::CAST_ONLY_XYZ)
+        printf("Error: Unsupported cast flag CAST_ONLY_XYZ for spell %u!\n", spellId);
+
+    if (eventFlags & CMaNGOS::EFLAG_RANGED_MODE_ONLY)
+        spellList.castFlags |= VMaNGOS::CF_NOT_IN_MELEE;
+    if (eventFlags & CMaNGOS::EFLAG_MELEE_MODE_ONLY)
+    {
+        spellList.castFlags |= VMaNGOS::CF_ONLY_IN_MELEE;
+        if (spellList.castFlags & VMaNGOS::CF_MAIN_RANGED_SPELL)
+            spellList.castFlags -= VMaNGOS::CF_MAIN_RANGED_SPELL;
+    }
+
+    g_creatureSpellLists[creatureId].push_back(spellList);
+}
+
+void ExportCreatureSpellList(std::ofstream& myfile, uint32 creatureId)
+{
+    auto itr = g_creatureSpellLists.find(creatureId);
+    if (itr != g_creatureSpellLists.end())
+    {
+        myfile << "INSERT INTO `creature_spells` (`entry`, `name`, ";
+        for (size_t i = 0; i < itr->second.size(); i++)
+        {
+            if (i != 0)
+                myfile << ", ";
+            myfile << "`spellId_" + std::to_string(i + 1) + "`, `probability_" + std::to_string(i + 1) + "`, `castTarget_" + std::to_string(i + 1) + "`, `targetParam1_" + std::to_string(i + 1) + "`, `targetParam2_" + std::to_string(i + 1) + "`, `castFlags_" + std::to_string(i + 1) + "`, `delayInitialMin_" + std::to_string(i + 1) + "`, `delayInitialMax_" + std::to_string(i + 1) + "`, `delayRepeatMin_" + std::to_string(i + 1) + "`, `delayRepeatMax_" + std::to_string(i + 1) + "`";
+        }
+
+        myfile << ") VALUES (" << creatureId * 10 << ", 'ZonePlaceholder - " << EscapeString(g_creatureNames[creatureId].c_str()) << "', ";
+        for (size_t i = 0; i < itr->second.size(); i++)
+        {
+            if (i != 0)
+                myfile << ", ";
+
+            VMaNGOS::CreatureSpellsEntry& spellList = itr->second[i];
+            myfile << spellList.spellId << ", " << spellList.probability << ", " << spellList.castTarget << ", " << spellList.targetParam1 << ", " << spellList.targetParam2 << ", " << spellList.castFlags << ", " << spellList.delayInitialMin << ", " << spellList.delayInitialMax << ", " << spellList.delayRepeatMin << ", " << spellList.delayRepeatMax;
+        }
+        myfile << ");\n";
+    }
 }
 
 // We need separate non-coflicting ids for events that choose a random action. Hopefully no creature has more than 50 events.
@@ -689,6 +850,7 @@ int main()
     std::string query = "SELECT `id`, `creature_id`, `event_type`, `event_inverse_phase_mask`, `event_chance`, `event_flags`, `event_param1`, `event_param2`, `event_param3`, `event_param4`, `action1_type`, `action1_param1`, `action1_param2`, `action1_param3`, `action2_type`, `action2_param1`, `action2_param2`, `action2_param3`, `action3_type`, `action3_param1`, `action3_param2`, `action3_param3`, `comment` FROM `creature_ai_scripts`";
     if (IsNumber(chosen_creature))
         query += " WHERE `creature_id` = " + chosen_creature;
+    query += " ORDER BY creature_id, id";
 
     printf("\nEnter your database connection info.\n");
     std::string const connection_string = MakeConnectionString();
@@ -712,7 +874,7 @@ int main()
             uint32 entry = pFields[0].getUInt32();
             std::string name = pFields[1].getCppString();
 
-            g_NamesMap[entry] = name;
+            g_creatureNames[entry] = name;
         } while (result->NextRow());
     }
 
@@ -733,11 +895,12 @@ int main()
             temp.orientation = pFields[4].getFloat();
             temp.SpawnTimeSecs = pFields[5].getUInt32();
 
-            g_SummonsMap[temp.id] = temp;
+            g_summonPositions[temp.id] = temp;
         } while (result->NextRow());
     }
 
-    uint32 total_count = 0;
+    uint32 totalCount = 0;
+    uint32 lastCreatureId = 0;
     printf("Converting scripts.\n");
     if (std::shared_ptr<QueryResult> result = GameDb.Query(query.c_str()))
     {
@@ -747,6 +910,14 @@ int main()
 
             uint32 const id = pFields[0].getUInt32();
             uint32 const creature_id = pFields[1].getUInt32();
+
+            // Export creature_spells data once we are done with all events for this creature id.
+            if (lastCreatureId && lastCreatureId != creature_id)
+            {
+                ExportCreatureSpellList(myfile, lastCreatureId);
+                myfile << "\n";
+            }
+
             uint32 event_type = pFields[2].getUInt32();
             uint32 const event_inverse_phase_mask = pFields[3].getUInt32();
             uint32 const event_chance = pFields[4].getUInt32();
@@ -762,6 +933,7 @@ int main()
             if (!ProcessEvent(id, event_type, event_param1, event_param2, event_param3, event_param4, condition_id))
             {
                 printf("Error: Entry %u uses unsupported event %u, skipping. \n", id, event_type);
+                lastCreatureId = creature_id;
                 continue;
             }
             
@@ -781,6 +953,13 @@ int main()
             int32 const action3_param1 = pFields[19].getInt32();
             int32 const action3_param2 = pFields[20].getInt32();
             int32 const action3_param3 = pFields[21].getInt32();
+
+            if (event_type == VMaNGOS::EVENT_T_TIMER && action1_type == CMaNGOS::ACTION_T_CAST && !action2_type && !action3_type && !event_inverse_phase_mask && (event_flags & VMaNGOS::EFLAG_REPEATABLE))
+            {
+                AddSpellCastToCreatureSpellsList(creature_id, event_chance, event_flags, action1_param1, action1_param2, action1_param3, event_param1, event_param2, event_param3, event_param4);
+                lastCreatureId = creature_id;
+                continue;
+            }
 
             if (action1_type)
             {
@@ -810,22 +989,24 @@ int main()
             if (vScriptActions.empty())
             {
                 printf("Error: Entry %u has no actions or all actions are unsupported.\n", id);
+                lastCreatureId = creature_id;
                 continue;
             }
 
-            total_count++;
+            if (lastCreatureId != creature_id)
+                myfile << "-- Events list for " << g_creatureNames[creature_id] << "\n";
+            myfile << "INSERT INTO `creature_ai_scripts` (`id`, `delay`, `command`, `datalong`, `datalong2`, `datalong3`, `datalong4`, `target_param1`, `target_param2`, `target_type`, `data_flags`, `dataint`, `dataint2`, `dataint3`, `dataint4`, `x`, `y`, `z`, `o`, `condition_id`, `comments`) VALUES\n";
+            
+            uint8 i = 0;
+            uint32 script_id = id;
             uint32 action_script[3] = { id, 0, 0 };
             uint8 actions_count = vScriptActions.size();
             bool random_actions = ((event_flags & CMaNGOS::EFLAG_RANDOM_ACTION) && (actions_count > 1));
 
-            uint8 i = 0;
-            uint32 script_id = id;
-            myfile << "INSERT INTO `creature_ai_scripts` (`id`, `delay`, `command`, `datalong`, `datalong2`, `datalong3`, `datalong4`, `target_param1`, `target_param2`, `target_type`, `data_flags`, `dataint`, `dataint2`, `dataint3`, `dataint4`, `x`, `y`, `z`, `o`, `condition_id`, `comments`) VALUES\n";
             for (auto const& pScriptAction : vScriptActions)
             {
-                pScriptAction->comment = g_NamesMap[creature_id] + " - " + pScriptAction->comment;
-                char* escaped_comment = new char[pScriptAction->comment.length() * 2 + 1];
-                mysql_escape_string(escaped_comment, pScriptAction->comment.c_str(), pScriptAction->comment.length());
+                pScriptAction->comment = g_creatureNames[creature_id] + " - " + pScriptAction->comment;
+                pScriptAction->comment = EscapeString(pScriptAction->comment.c_str());
 
                 if (random_actions)
                 {
@@ -853,9 +1034,7 @@ int main()
                     pScriptAction->z << ", " <<
                     pScriptAction->o << ", " <<
                     pScriptAction->condition << ", " <<
-                    "'" << escaped_comment << "')" << (actions_count == (i + 1) ? ";" : ",") << "\n";
-
-                delete[] escaped_comment;
+                    "'" << pScriptAction->comment << "')" << (actions_count == (i + 1) ? ";" : ",") << "\n";
                 i++;
             }
 
@@ -869,9 +1048,8 @@ int main()
                 new_flags |= VMaNGOS::EFLAG_DEBUG_ONLY;
 
             // Escape the comment.
-            std::string const comment = pFields[22].getCppString();
-            char* escaped_comment = new char[comment.length() * 2 + 1];
-            mysql_escape_string(escaped_comment, comment.c_str(), comment.length());
+            std::string comment = pFields[22].getCppString();
+            comment = EscapeString(comment.c_str());
 
             myfile << "INSERT INTO `creature_ai_events` (`id`, `creature_id`, `condition_id`, `event_type`, `event_inverse_phase_mask`, `event_chance`, `event_flags`, `event_param1`, `event_param2`, `event_param3`, `event_param4`, `action1_script`, `action2_script`, `action3_script`, `comment`) VALUES (" <<
                 id << ", " <<
@@ -888,15 +1066,22 @@ int main()
                 action_script[0] << ", " <<
                 action_script[1] << ", " <<
                 action_script[2] << ", " <<
-                "'" << escaped_comment << "');\n\n";
+                "'" << comment << "');\n";
 
-            delete[] escaped_comment;
+            totalCount++;
+            lastCreatureId = creature_id;
         } while (result->NextRow());
     }
 
-    printf("\nDone! Converted %u creature events and their associated actions.", total_count);
-    if (g_TextsWarning)
+    // Export spell list data for the last creature processed.
+    if (lastCreatureId)
+        ExportCreatureSpellList(myfile, lastCreatureId);
+
+    printf("\nDone! Converted %u creature events and their associated actions.", totalCount);
+    if (g_textsWarning)
         printf("\nWarning: Texts used in ACTION_T_TEXT need to be replaced with broadcast Ids.");
+    if (!g_creatureSpellLists.empty())
+        printf("\nWarning: Remember to assign zone name in `creature_spells` table.");
     getchar();
 
     myfile.close();

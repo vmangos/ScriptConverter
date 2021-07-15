@@ -141,7 +141,7 @@ namespace CMaNGOS
 
         TARGET_T_HOSTILE_RANDOM_MANA            = 16,           // Random target with mana
         TARGET_T_NEAREST_AOE_TARGET             = 17,           // Nearest target for aoe
-        TARGET_T_HOSTILE_FARTHEST_AWAY          = 18,       // Farthest away target, excluding melee range
+        TARGET_T_HOSTILE_FARTHEST_AWAY          = 18,           // Farthest away target, excluding melee range
     };
 
     enum EventFlags
@@ -173,6 +173,8 @@ namespace CMaNGOS
         CAST_MAIN_SPELL             = 0x100,                    // Marks main spell
         CAST_PLAYER_ONLY            = 0x200,                    // Selects only player targets - substitution for EAI not having more params
         CAST_DISTANCE_YOURSELF      = 0x400,                    // If spell with this cast flag hits main aggro target, caster distances himself - EAI only
+        CAST_TARGET_CASTING         = 0x800,                    // Selects only player targets that are casting - EAI only
+        CAST_ONLY_XYZ               = 0x1000,
     };
 
     struct EventAISummon

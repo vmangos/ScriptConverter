@@ -61,7 +61,8 @@ namespace VMaNGOS
                                                                 // datalong = chat_type (see enum ChatType)
                                                                 // dataint = broadcast_text id. dataint2-4 optional for random selected text.
         SCRIPT_COMMAND_EMOTE                    = 1,            // source = Unit
-                                                                // datalong = emote_id
+                                                                // datalong1-4 = emote_id
+                                                                // dataint = (bool) is_targeted
         SCRIPT_COMMAND_FIELD_SET                = 2,            // source = Object
                                                                 // datalong = field_id
                                                                 // datalong2 = value
@@ -103,7 +104,7 @@ namespace VMaNGOS
                                                                 // datalong4 = unique_distance
                                                                 // dataint = eSummonCreatureFlags
                                                                 // dataint2 = script_id
-                                                                // dataint3 = attack_target (see enum Target)
+                                                                // dataint3 = attack_target (see enum ScriptTarget)
                                                                 // dataint4 = despawn_type (see enum TempSummonType)
                                                                 // x/y/z/o = coordinates
         SCRIPT_COMMAND_OPEN_DOOR                = 11,           // source = GameObject (from datalong, provided source or target)
@@ -127,7 +128,7 @@ namespace VMaNGOS
                                                                 // datalong = sound_id
                                                                 // datalong2 = ePlaySoundFlags
         SCRIPT_COMMAND_CREATE_ITEM              = 17,           // source = Player (from provided source or target)
-                                                                // datalong = item_entry
+                                                                // datalong = item_id
                                                                 // datalong2 = amount
         SCRIPT_COMMAND_DESPAWN_CREATURE         = 18,           // source = Creature
                                                                 // datalong = despawn_delay
@@ -148,11 +149,11 @@ namespace VMaNGOS
         SCRIPT_COMMAND_SET_FACTION              = 22,           // source = Creature
                                                                 // datalong = faction_Id,
                                                                 // datalong2 = see enum TemporaryFactionFlags
-        SCRIPT_COMMAND_MORPH_TO_ENTRY_OR_MODEL  = 23,           // source = Creature
-                                                                // datalong = creature entry/modelid (depend on datalong2)
+        SCRIPT_COMMAND_MORPH_TO_ENTRY_OR_MODEL  = 23,           // source = Unit
+                                                                // datalong = creature_id/display_id (depend on datalong2)
                                                                 // datalong2 = (bool) is_display_id
         SCRIPT_COMMAND_MOUNT_TO_ENTRY_OR_MODEL  = 24,           // source = Creature
-                                                                // datalong = creature entry/modelid (depend on datalong2)
+                                                                // datalong = creature_id/display_id (depend on datalong2)
                                                                 // datalong2 = (bool) is_display_id
                                                                 // datalong3 = (bool) permanent
         SCRIPT_COMMAND_SET_RUN                  = 25,           // source = Creature
@@ -161,7 +162,6 @@ namespace VMaNGOS
                                                                 // target = Player
         SCRIPT_COMMAND_UPDATE_ENTRY             = 27,           // source = Creature
                                                                 // datalong = creature_entry
-                                                                // datalong2 = team for display_id (0 = alliance, 1 = horde)
         SCRIPT_COMMAND_STAND_STATE              = 28,           // source = Unit
                                                                 // datalong = stand_state (enum UnitStandStateType)
         SCRIPT_COMMAND_MODIFY_THREAT            = 29,           // source = Creature
@@ -199,7 +199,7 @@ namespace VMaNGOS
                                                                 // datalong1-4 = event_script id
                                                                 // dataint1-4 = chance (total cant be above 100)
         SCRIPT_COMMAND_REMOVE_ITEM              = 40,           // source = Player (from provided source or target)
-                                                                // datalong = item_entry
+                                                                // datalong = item_id
                                                                 // datalong2 = amount
         SCRIPT_COMMAND_REMOVE_OBJECT            = 41,           // source = GameObject
                                                                 // target = Unit
@@ -254,7 +254,7 @@ namespace VMaNGOS
                                                                 // datalong2 = start_point
                                                                 // datalong3 = initial_delay
                                                                 // datalong4 = (bool) repeat
-                                                                // dataint = path_id
+                                                                // dataint = overwrite_guid
                                                                 // dataint2 = overwrite_entry
         SCRIPT_COMMAND_START_MAP_EVENT          = 61,           // source = Map
                                                                 // datalong = event_id
@@ -314,7 +314,37 @@ namespace VMaNGOS
                                                                 // datalong2 = flags
         SCRIPT_COMMAND_ADD_THREAT               = 75,           // source = Creature
                                                                 // target = Unit
-    
+        SCRIPT_COMMAND_SUMMON_OBJECT            = 76,           // source = WorldObject
+                                                                // datalong = gameobject_entry
+                                                                // datalong2 = respawn_time
+                                                                // x/y/z/o = coordinates
+        SCRIPT_COMMAND_SET_FLY                  = 77,           // source = Unit
+                                                                // datalong = (bool) 0 = off, 1 = on
+        SCRIPT_COMMAND_JOIN_CREATURE_GROUP      = 78,           // source = Creature
+                                                                // target = Creature
+                                                                // datalong = OptionFlags
+                                                                // x = distance
+                                                                // o = angle
+        SCRIPT_COMMAND_LEAVE_CREATURE_GROUP     = 79,           // source = Creature
+        SCRIPT_COMMAND_SET_GO_STATE             = 80,           // source = GameObject
+                                                                // datalong = GOState
+        SCRIPT_COMMAND_DESPAWN_GAMEOBJECT       = 81,           // source = GameObject (from datalong, provided source or target)
+                                                                // datalong = db_guid
+                                                                // datalong2 = despawn_delay
+        SCRIPT_COMMAND_LOAD_GAMEOBJECT          = 82,           // source = Map
+                                                                // datalong = db_guid
+        SCRIPT_COMMAND_QUEST_CREDIT             = 83,           // source = Player (from provided source or target)
+                                                                // target = WorldObject (from provided source or target)
+        SCRIPT_COMMAND_SET_GOSSIP_MENU          = 84,           // source = Creature
+                                                                // datalong = gossip_menu_id
+        SCRIPT_COMMAND_SEND_SCRIPT_EVENT        = 85,           // source = Creature
+                                                                // target = WorldObject
+                                                                // datalong = event_id
+                                                                // datalong2 = event_data
+        SCRIPT_COMMAND_SET_PVP                  = 86,           // source = Player
+                                                                // datalong = (bool) 0 = off, 1 = on
+        SCRIPT_COMMAND_RESET_DOOR_OR_BUTTON     = 87,           // source = GameObject
+
         SCRIPT_COMMAND_MAX,
 
         SCRIPT_COMMAND_DISABLED                 = 9999          // Script action was disabled during loading.
@@ -333,6 +363,7 @@ namespace VMaNGOS
         SO_MOVETO_COORDINATES_NORMAL               = 0,
         SO_MOVETO_COORDINATES_RELATIVE_TO_TARGET   = 1,            // Coordinates are added to that of target.
         SO_MOVETO_COORDINATES_DISTANCE_FROM_TARGET = 2,            // X is distance from target, others not used.
+        SO_MOVETO_COORDINATES_RANDOM_POINT         = 3,            // O is max distance from coordinates
 
         MOVETO_COORDINATES_MAX
     };
@@ -346,13 +377,13 @@ namespace VMaNGOS
     };
 
     // Flags used by SCRIPT_COMMAND_TEMP_SUMMON_CREATURE
-    // Must start from 0x8 because of target selection flags.
     enum eSummonCreatureFlags
     {
-        SF_SUMMONCREATURE_SET_RUN     = 0x1,                         // makes creature move at run speed
-        SF_SUMMONCREATURE_ACTIVE      = 0x2,                         // active creatures are always updated
-        SF_SUMMONCREATURE_UNIQUE      = 0x4,                         // not actually unique, just checks for same entry in certain range
-        SF_SUMMONCREATURE_UNIQUE_TEMP = 0x8                          // same as 0x10 but check for TempSummon only creatures
+        SF_SUMMONCREATURE_SET_RUN     = 0x01,                       // makes creature move at run speed
+        SF_SUMMONCREATURE_ACTIVE      = 0x02,                       // active creatures are always updated
+        SF_SUMMONCREATURE_UNIQUE      = 0x04,                       // not actually unique, just checks for same entry in certain range
+        SF_SUMMONCREATURE_UNIQUE_TEMP = 0x08,                       // same as 0x10 but check for TempSummon only creatures
+        SF_SUMMONCREATURE_NULL_AI     = 0x10                        // use Null AI instead of the normal creature script
     };
 
     // Flags used by SCRIPT_COMMAND_PLAY_SOUND
@@ -497,12 +528,9 @@ namespace VMaNGOS
 
             struct                                              // SCRIPT_COMMAND_EMOTE (1)
             {
-                uint32 emoteId;                                 // datalong
-                uint32 unused1;                                 // datalong2
-                uint32 unused2;                                 // datalong3
-                uint32 unused3;                                 // datalong4
-                uint32 unused4;                                 // data_flags
-                uint32 randomEmotes[MAX_EMOTE_ID];              // dataint to dataint4
+                uint32 emoteId[MAX_EMOTE_ID];                   // datalong to datalong4
+                uint32 unused;                                  // data_flags
+                int32  isTargeted;                              // dataint
             } emote;
 
             struct                                              // SCRIPT_COMMAND_FIELD_SET (2)
@@ -605,7 +633,7 @@ namespace VMaNGOS
 
             struct                                              // SCRIPT_COMMAND_CREATE_ITEM (17)
             {
-                uint32 itemEntry;                               // datalong
+                uint32 itemId;                                  // datalong
                 uint32 amount;                                  // datalong2
             } createItem;
 
@@ -666,7 +694,6 @@ namespace VMaNGOS
             struct                                              // SCRIPT_COMMAND_UPDATE_ENTRY (27)
             {
                 uint32 creatureEntry;                           // datalong
-                uint32 team;                                    // datalong2
             } updateEntry;
 
             struct                                              // SCRIPT_COMMAND_STAND_STATE (28)
@@ -738,7 +765,7 @@ namespace VMaNGOS
 
             struct                                              // SCRIPT_COMMAND_REMOVE_ITEM (40)
             {
-                uint32 itemEntry;                               // datalong
+                uint32 itemId;                                  // datalong
                 uint32 amount;                                  // datalong2
             } removeItem;
 
@@ -815,7 +842,7 @@ namespace VMaNGOS
 
             struct                                              // SCRIPT_COMMAND_CREATURE_SPELLS (55)
             {
-                uint32 spellTemplate[4];                        // datalong to datalong4
+                uint32 spellListId[4];                          // datalong to datalong4
                 uint32 unused;                                  // data_flags
                 int32 chance[4];                                // dataint to dataint4
             } creatureSpells;
@@ -848,7 +875,7 @@ namespace VMaNGOS
                 uint32 initialDelay;                            // datalong3
                 uint32 canRepeat;                               // datalong4
                 uint32 unused;                                  // data_flags
-                int32  pathId;                                  // dataint
+                int32  overwriteGuid;                           // dataint
                 int32  overwriteEntry;                          // dataint2
             } startWaypoints;
         
@@ -955,6 +982,61 @@ namespace VMaNGOS
             } addAura;
 
                                                                 // SCRIPT_COMMAND_ADD_THREAT (75)
+
+            struct                                              // SCRIPT_COMMAND_SUMMON_OBJECT (76)
+            {
+                uint32 gameobject_entry;                        // datalong
+                uint32 respawn_time;                            // datalong2
+            } summonObject;
+
+            struct                                              // SCRIPT_COMMAND_SET_FLY (77)
+            {
+                uint32 enabled;                                 // datalong
+            } setFly;
+
+            struct                                              // SCRIPT_COMMAND_JOIN_CREATURE_GROUP (78)
+            {
+                uint32 options;                                 // datalong
+            } joinCreatureGroup;
+
+                                                                // SCRIPT_COMMAND_LEAVE_CREATURE_GROUP (79)
+
+            struct                                              // SCRIPT_COMMAND_SET_GO_STATE (80)
+            {
+                uint32 state;                                   // datalong
+            } setGoState;
+
+            struct                                              // SCRIPT_COMMAND_DESPAWN_GAMEOBJECT (81)
+            {
+                uint32 goGuid;                                  // datalong
+                uint32 respawnDelay;                            // datalong2
+            } despawnGo;
+
+            struct                                              // SCRIPT_COMMAND_LOAD_GAMEOBJECT (82)
+            {
+                uint32 goGuid;                                  // datalong
+            } loadGo;
+
+                                                                // SCRIPT_COMMAND_QUEST_CREDIT (83)
+
+            struct                                              // SCRIPT_COMMAND_SET_GOSSIP_MENU (84)
+            {
+                uint32 gossipMenuId;                            // datalong
+            } setGossipMenu;
+
+            struct                                              // SCRIPT_COMMAND_SEND_SCRIPT_EVENT (85)
+            {
+                uint32 eventId;                                 // datalong
+                uint32 eventData;                               // datalong2
+            } sendScriptEvent;
+
+            struct                                              // SCRIPT_COMMAND_SET_PVP (86)
+            {
+                uint32 enabled;                                 // datalong
+            } setPvP;
+
+                                                                // SCRIPT_COMMAND_RESET_DOOR_OR_BUTTON (87)
+
             struct
             {
                 uint32 data[9];
@@ -992,14 +1074,15 @@ namespace VMaNGOS
 
     enum CastFlags
     {
-        CF_INTERRUPT_PREVIOUS     = 0x01,                     //Interrupt any spell casting
-        CF_TRIGGERED              = 0x02,                     //Triggered (this makes spell cost zero mana and have no cast time)
-        CF_FORCE_CAST             = 0x04,                     //Forces cast even if creature is out of mana or out of range
-        CF_MAIN_RANGED_SPELL      = 0x08,                     //To be used by ranged mobs only. Creature will not chase target until cast fails.
-        CF_TARGET_UNREACHABLE     = 0x10,                     //Will only use the ability if creature cannot currently get to target
-        CF_AURA_NOT_PRESENT       = 0x20,                     //Only casts the spell if the target does not have an aura from the spell
-        CF_ONLY_IN_MELEE          = 0x40,                     //Only casts if the creature is in melee range of the target
-        CF_NOT_IN_MELEE           = 0x80,                     //Only casts if the creature is not in melee range of the target
+        CF_INTERRUPT_PREVIOUS     = 0x001,                     // Interrupt any spell casting
+        CF_TRIGGERED              = 0x002,                     // Triggered (this makes spell cost zero mana and have no cast time)
+        CF_FORCE_CAST             = 0x004,                     // Bypasses extra checks in Creature::TryToCast
+        CF_MAIN_RANGED_SPELL      = 0x008,                     // To be used by ranged mobs only. Creature will not chase target until cast fails.
+        CF_TARGET_UNREACHABLE     = 0x010,                     // Will only use the ability if creature cannot currently get to target
+        CF_AURA_NOT_PRESENT       = 0x020,                     // Only casts the spell if the target does not have an aura from the spell
+        CF_ONLY_IN_MELEE          = 0x040,                     // Only casts if the creature is in melee range of the target
+        CF_NOT_IN_MELEE           = 0x080,                     // Only casts if the creature is not in melee range of the target
+        CF_TARGET_CASTING         = 0x100,                     // Only casts if the target is currently casting a spell
     };
 
     // Values used in target_type column
@@ -1009,15 +1092,19 @@ namespace VMaNGOS
 
         TARGET_T_HOSTILE                        = 1,            //Our current target (ie: highest aggro).
         TARGET_T_HOSTILE_SECOND_AGGRO           = 2,            //Second highest aggro (generaly used for cleaves and some special attacks).
+                                                                //Param1 = select_flags
         TARGET_T_HOSTILE_LAST_AGGRO             = 3,            //Dead last on aggro (no idea what this could be used for).
+                                                                //Param1 = select_flags
         TARGET_T_HOSTILE_RANDOM                 = 4,            //Just any random target on our threat list.
+                                                                //Param1 = select_flags
         TARGET_T_HOSTILE_RANDOM_NOT_TOP         = 5,            //Any random target except top threat.
+                                                                //Param1 = select_flags
 
         TARGET_T_OWNER_OR_SELF                  = 6,            //Either self or owner if pet or controlled.
         TARGET_T_OWNER                          = 7,            //The owner of the source.
     
 
-        TARGET_T_CREATURE_WITH_ENTRY            = 8,            //Searches for nearby creature with the given entry.
+        TARGET_T_NEAREST_CREATURE_WITH_ENTRY    = 8,            //Searches for closest nearby creature with the given entry.
                                                                 //Param1 = creature_entry
                                                                 //Param2 = search_radius
 
@@ -1027,7 +1114,7 @@ namespace VMaNGOS
         TARGET_T_CREATURE_FROM_INSTANCE_DATA    = 10,           //Find creature by guid stored in instance data.
                                                                 //Param1 = instance_data_field
 
-        TARGET_T_GAMEOBJECT_WITH_ENTRY          = 11,           //Searches for nearby gameobject with the given entry.
+        TARGET_T_NEAREST_GAMEOBJECT_WITH_ENTRY  = 11,           //Searches for closest nearby gameobject with the given entry.
                                                                 //Param1 = gameobject_entry
                                                                 //Param2 = search_radius
 
@@ -1061,7 +1148,45 @@ namespace VMaNGOS
         TARGET_T_MAP_EVENT_EXTRA_TARGET         = 22,           //An additional WorldObject target from a scripted map event.
                                                                 //Param1 = eventId
                                                                 //Param2 = creature_entry or gameobject_entry
+        TARGET_T_NEAREST_PLAYER                 = 23,           //Nearest player within range.
+                                                                //Param1 = search-radius
+        TARGET_T_NEAREST_HOSTILE_PLAYER         = 24,           //Nearest hostile player within range.
+                                                                //Param1 = search-radius
+        TARGET_T_NEAREST_FRIENDLY_PLAYER        = 25,           //Nearest friendly player within range.
+                                                                //Param1 = search-radius
+        TARGET_T_RANDOM_CREATURE_WITH_ENTRY     = 26,           //Searches for random nearby creature with the given entry. Not Self.
+                                                                //Param1 = creature_entry
+                                                                //Param2 = search_radius
+        TARGET_T_RANDOM_GAMEOBJECT_WITH_ENTRY   = 27,           //Searches for random nearby gameobject with the given entry.
+                                                                //Param1 = gameobject_entry
+                                                                //Param2 = search_radius
         TARGET_T_END
+    };
+
+    // Selection method used by SelectAttackingTarget
+    enum AttackingTarget
+    {
+        ATTACKING_TARGET_RANDOM = 0,                            // Just selects a random target
+        ATTACKING_TARGET_TOPAGGRO,                              // Selects targets from top aggro to bottom
+        ATTACKING_TARGET_BOTTOMAGGRO,                           // Selects targets from bottom aggro to top
+        ATTACKING_TARGET_NEAREST,                               // Selects the closest target
+        ATTACKING_TARGET_FARTHEST                               // Selects the farthest away target
+    };
+
+    enum SelectFlags
+    {
+        SELECT_FLAG_IN_LOS              = 0x001,                // Default Selection Requirement for Spell-targets
+        SELECT_FLAG_PLAYER              = 0x002,
+        SELECT_FLAG_POWER_MANA          = 0x004,                // For Energy based spells, like manaburn
+        SELECT_FLAG_POWER_RAGE          = 0x008,
+        SELECT_FLAG_POWER_ENERGY        = 0x010,
+        SELECT_FLAG_IN_MELEE_RANGE      = 0x040,
+        SELECT_FLAG_NOT_IN_MELEE_RANGE  = 0x080,
+        SELECT_FLAG_NO_TOTEM            = 0x100,
+        SELECT_FLAG_PLAYER_NOT_GM       = 0x200,
+        SELECT_FLAG_PET                 = 0x400,
+        SELECT_FLAG_NOT_PLAYER          = 0x800,
+        SELECT_FLAG_POWER_NOT_MANA      = 0x1000,               // Used in some dungeon encounters
     };
 
     enum TempSummonType
@@ -1101,9 +1226,19 @@ namespace VMaNGOS
         EFFECT_MOTION_TYPE              = 15,
         PATROL_MOTION_TYPE              = 16,
         CHARGE_MOTION_TYPE              = 17,
+    };
 
-        WAYPOINT_SPECIAL_REACHED        = 256,                  // Only used in CreatureAI::MovementInform when a special waypoint is reached. The pathId >= 0 is added as additonal value
-        WAYPOINT_SPECIAL_STARTED        = 512,                  // Only used in CreatureAI::MovementInform when a special waypoint is started. The pathId >= 0 is added as additional value
-        WAYPOINT_SPECIAL_FINISHED_LAST  = 1024,                 // Only used in CreatureAI::MovementInform when the waittime of the last special wp is finished. The pathId >= 0 is added as additional value
+    struct CreatureSpellsEntry
+    {
+        uint32 spellId = 0;
+        uint32 probability = 100;
+        uint32 castTarget = 0;
+        uint32 targetParam1 = 0;
+        uint32 targetParam2 = 0;
+        uint32 castFlags = 0;
+        uint32 delayInitialMin = 0;
+        uint32 delayInitialMax = 0;
+        uint32 delayRepeatMin = 0;
+        uint32 delayRepeatMax = 0;
     };
 }
