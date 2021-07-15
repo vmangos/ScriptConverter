@@ -7,6 +7,7 @@
 #include <string>
 #include <memory>
 #include <vector>
+#include <set>
 
 #include "Database\Database.h"
 #include "Defines\CMaNGOS.h"
@@ -799,11 +800,19 @@ void AddSpellCastToCreatureSpellsList(uint32 creatureId, uint32 eventChance, uin
     g_creatureSpellLists[creatureId].push_back(spellList);
 }
 
+std::set<uint32> g_processedCreatures; // to know if comment was written at begin exporting data for creature id
+
 void ExportCreatureSpellList(std::ofstream& myfile, uint32 creatureId)
 {
     auto itr = g_creatureSpellLists.find(creatureId);
     if (itr != g_creatureSpellLists.end())
     {
+        if (g_processedCreatures.find(creatureId) == g_processedCreatures.end())
+        {
+            myfile << "-- Spell list for " << g_creatureNames[creatureId] << "\n";
+            g_processedCreatures.insert(creatureId);
+        }
+
         myfile << "INSERT INTO `creature_spells` (`entry`, `name`, ";
         for (size_t i = 0; i < itr->second.size(); i++)
         {
@@ -993,8 +1002,11 @@ int main()
                 continue;
             }
 
-            if (lastCreatureId != creature_id)
+            if (g_processedCreatures.find(creature_id) == g_processedCreatures.end())
+            {
                 myfile << "-- Events list for " << g_creatureNames[creature_id] << "\n";
+                g_processedCreatures.insert(creature_id);
+            }
             myfile << "INSERT INTO `creature_ai_scripts` (`id`, `delay`, `command`, `datalong`, `datalong2`, `datalong3`, `datalong4`, `target_param1`, `target_param2`, `target_type`, `data_flags`, `dataint`, `dataint2`, `dataint3`, `dataint4`, `x`, `y`, `z`, `o`, `condition_id`, `comments`) VALUES\n";
             
             uint8 i = 0;
