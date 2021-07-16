@@ -60,8 +60,47 @@ std::string MakeConnectionString()
     return mysql_host + ";" + mysql_port + ";" + mysql_user + ";" + mysql_pass + ";" + mysql_db;
 }
 
+std::unordered_map<int32, CMaNGOS::EventAIText> g_scriptTexts;
+std::unordered_map<uint32, CMaNGOS::BroadcastText> g_broadcastTexts;
+std::set<int32> g_notFoundTexts;
+std::vector<std::string> g_textUpdates;
+bool g_textsWarning = false;
+
+uint32 ConvertEventAiText(int32 textId)
+{
+    if (!textId)
+        return textId;
+
+    auto itr = g_scriptTexts.find(textId);
+    if (itr == g_scriptTexts.end())
+    {
+        printf("Error: Event AI text %i does not exist!\n", textId);
+        return textId;
+    }
+
+    for (auto const& itr2 : g_broadcastTexts)
+    {
+        if (itr->second.text == itr2.second.maleText ||
+            itr->second.text == itr2.second.femaleText)
+        {
+            if (itr->second.chatType)
+                g_textUpdates.push_back(std::string("UPDATE `broadcast_text` SET `chat_type`=" + std::to_string(itr->second.chatType) + std::string(" WHERE `entry`=") + std::to_string(itr2.first) + std::string(";\n")));
+            if (itr->second.emoteId)
+                g_textUpdates.push_back(std::string("UPDATE `broadcast_text` SET `emote_id1`=" + std::to_string(itr->second.emoteId) + std::string(" WHERE `entry`=") + std::to_string(itr2.first) + std::string(";\n")));
+
+            return itr2.first;
+        }
+    }
+
+    g_textsWarning = true;
+    printf("Error: Event AI text %i not found in broadcast texts. Custom?\n", textId);
+    g_notFoundTexts.insert(textId);
+    return textId;
+}
+
 std::unordered_map<uint32, CMaNGOS::EventAISummon> g_summonPositions;
 std::unordered_map<uint32, std::string> g_creatureNames;
+std::unordered_map<uint32, std::string> g_spellNames;
 
 bool ProcessEvent(uint32 id, uint32& event_type, int32& event_param1, int32& event_param2, int32& event_param3, int32& event_param4, uint32& condition_id)
 {
@@ -157,7 +196,7 @@ void ConvertTargetType(uint32 targetType, uint32& outTargetType, uint32& outTarg
     }
 }
 
-bool g_textsWarning = false;
+
 
 VMaNGOS::ScriptInfo* ProcessAction(uint32 id, uint32 action_type, int32 action_param1, int32 action_param2, int32 action_param3)
 {
@@ -169,11 +208,10 @@ VMaNGOS::ScriptInfo* ProcessAction(uint32 id, uint32 action_type, int32 action_p
         {
             pScriptInfo = new VMaNGOS::ScriptInfo();
             pScriptInfo->command = VMaNGOS::SCRIPT_COMMAND_TALK;
-            pScriptInfo->talk.textId[0] = action_param1;
-            pScriptInfo->talk.textId[1] = action_param2;
-            pScriptInfo->talk.textId[2] = action_param3;
+            pScriptInfo->talk.textId[0] = ConvertEventAiText(action_param1);
+            pScriptInfo->talk.textId[1] = ConvertEventAiText(action_param2);
+            pScriptInfo->talk.textId[2] = ConvertEventAiText(action_param3);
             pScriptInfo->comment = "Say Text";
-            g_textsWarning = true;
             return pScriptInfo;
         }
         case CMaNGOS::ACTION_T_SET_FACTION:
@@ -263,7 +301,7 @@ VMaNGOS::ScriptInfo* ProcessAction(uint32 id, uint32 action_type, int32 action_p
             if (action_param3 & CMaNGOS::CAST_MAIN_SPELL)
                 pScriptInfo->castSpell.flags |= VMaNGOS::CF_MAIN_RANGED_SPELL;
 
-            pScriptInfo->comment = "Cast Spell";
+            pScriptInfo->comment = "Cast Spell " + EscapeString(g_spellNames[action_param1].c_str());
             return pScriptInfo;
         }
         case CMaNGOS::ACTION_T_SPAWN:
@@ -280,7 +318,7 @@ VMaNGOS::ScriptInfo* ProcessAction(uint32 id, uint32 action_type, int32 action_p
                 pScriptInfo->summonCreature.despawnType = VMaNGOS::TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT;
 
             pScriptInfo->summonCreature.despawnDelay = action_param3;
-            pScriptInfo->comment = "Summon Creature";
+            pScriptInfo->comment = "Summon Creature " + EscapeString(g_creatureNames[action_param1].c_str());
             return pScriptInfo;
         }
         case CMaNGOS::ACTION_T_THREAT_SINGLE_PCT:
@@ -494,7 +532,7 @@ VMaNGOS::ScriptInfo* ProcessAction(uint32 id, uint32 action_type, int32 action_p
             pScriptInfo->z = (*i).second.position_z;
             pScriptInfo->o = (*i).second.orientation;
 
-            pScriptInfo->comment = "Summon Creature";
+            pScriptInfo->comment = "Summon Creature " + EscapeString(g_creatureNames[action_param1].c_str());
             return pScriptInfo;
         }
         case CMaNGOS::ACTION_T_KILLED_MONSTER:
@@ -533,7 +571,7 @@ VMaNGOS::ScriptInfo* ProcessAction(uint32 id, uint32 action_type, int32 action_p
             pScriptInfo = new VMaNGOS::ScriptInfo();
             pScriptInfo->command = VMaNGOS::SCRIPT_COMMAND_UPDATE_ENTRY;
             pScriptInfo->updateEntry.creatureEntry = action_param1;
-            pScriptInfo->comment = "Update Entry";
+            pScriptInfo->comment = "Update Entry to " + EscapeString(g_creatureNames[action_param1].c_str());
             return pScriptInfo;
         }
         case CMaNGOS::ACTION_T_DIE:
@@ -611,10 +649,9 @@ VMaNGOS::ScriptInfo* ProcessAction(uint32 id, uint32 action_type, int32 action_p
         {
             pScriptInfo = new VMaNGOS::ScriptInfo();
             pScriptInfo->command = VMaNGOS::SCRIPT_COMMAND_TALK;
-            pScriptInfo->talk.textId[0] = action_param2;
-            pScriptInfo->talk.textId[1] = action_param3;
+            pScriptInfo->talk.textId[0] = ConvertEventAiText(action_param2);
+            pScriptInfo->talk.textId[1] = ConvertEventAiText(action_param3);
             pScriptInfo->comment = "Say Text";
-            g_textsWarning = true;
             printf("Warning: Entry %u uses unsupported ACTION_T_CHANCED_TEXT. Replacing with SCRIPT_COMMAND_TALK.\n", id);
             return pScriptInfo;
         }
@@ -847,6 +884,17 @@ int main()
     if (!myfile.is_open())
         return 1;
 
+    printf("Enter your database connection info.\n");
+    std::string const connection_string = MakeConnectionString();
+
+    printf("\nConnecting to database.\n\n");
+    if (!GameDb.Initialize(connection_string.c_str()))
+    {
+        printf("\nError: Cannot connect to world database!\n");
+        getchar();
+        return 1;
+    }
+
     printf("This tool converts CMaNGOS EventAI scripts to the format used in VMaNGOS.\n");
     printf("If you only want to convert the script of a single creature, enter its id.\n");
     printf("Leave this empty if you wish to convert the entire scripts table instead.\n");
@@ -861,17 +909,6 @@ int main()
         query += " WHERE `creature_id` = " + chosen_creature;
     query += " ORDER BY creature_id, id";
 
-    printf("\nEnter your database connection info.\n");
-    std::string const connection_string = MakeConnectionString();
-
-    printf("\nConnecting to database.\n");
-    if (!GameDb.Initialize(connection_string.c_str()))
-    {
-        printf("\nError: Cannot connect to world database!\n");
-        getchar();
-        return 1;
-    }
-
     // Load creature names to use in the action comment.
     printf("Loading creature names.\n");
     if (std::shared_ptr<QueryResult> result = GameDb.Query("SELECT `entry`, `name` FROM `creature_template`"))
@@ -884,6 +921,58 @@ int main()
             std::string name = pFields[1].getCppString();
 
             g_creatureNames[entry] = name;
+        } while (result->NextRow());
+    }
+
+    // Load spell names to use in the action comment.
+    printf("Loading spell names.\n");
+    if (std::shared_ptr<QueryResult> result = GameDb.Query("SELECT `Id`, `SpellName` FROM `spell_template`"))
+    {
+        do
+        {
+            DbField* pFields = result->fetchCurrentRow();
+
+            uint32 entry = pFields[0].getUInt32();
+            std::string name = pFields[1].getCppString();
+
+            g_spellNames[entry] = name;
+        } while (result->NextRow());
+    }
+
+    // Load broadcast texts table.
+    printf("Loading broadcast texts table.\n");
+    if (std::shared_ptr<QueryResult> result = GameDb.Query("SELECT `Id`, `Text`, `Text1` FROM `broadcast_text`"))
+    {
+        do
+        {
+            DbField* pFields = result->fetchCurrentRow();
+
+            CMaNGOS::BroadcastText text;
+
+            text.entry = pFields[0].getUInt32();
+            text.maleText = pFields[1].getCppString();
+            text.femaleText = pFields[2].getCppString();
+
+            g_broadcastTexts[text.entry] = text;
+        } while (result->NextRow());
+    }
+
+    // Load event ai texts table.
+    printf("Loading event ai texts table.\n");
+    if (std::shared_ptr<QueryResult> result = GameDb.Query("SELECT `entry`, `content_default`, `type`, `emote` FROM `creature_ai_texts`"))
+    {
+        do
+        {
+            DbField* pFields = result->fetchCurrentRow();
+
+            CMaNGOS::EventAIText text;
+
+            text.entry = pFields[0].getInt32();
+            text.text = pFields[1].getCppString();
+            text.chatType = pFields[2].getUInt32();
+            text.emoteId = pFields[3].getUInt32();
+
+            g_scriptTexts[text.entry] = text;
         } while (result->NextRow());
     }
 
@@ -924,6 +1013,22 @@ int main()
             if (lastCreatureId && lastCreatureId != creature_id)
             {
                 ExportCreatureSpellList(myfile, lastCreatureId);
+
+                // Export any updates to broadcast text chat type and emotes.
+                for (auto const& txt : g_textUpdates)
+                    myfile << txt;
+                g_textUpdates.clear();
+
+                // Show not found texts as comment.
+                if (!g_notFoundTexts.empty())
+                {
+                    myfile << "-- Following event ai texts were not found in broadcast texts:";
+                    for (auto const& id : g_notFoundTexts)
+                        myfile << " " << int32(id);
+                    myfile << "\n";
+                }
+                g_notFoundTexts.clear();
+
                 myfile << "\n";
             }
 
@@ -1090,10 +1195,10 @@ int main()
         ExportCreatureSpellList(myfile, lastCreatureId);
 
     printf("\nDone! Converted %u creature events and their associated actions.", totalCount);
-    if (g_textsWarning)
-        printf("\nWarning: Texts used in ACTION_T_TEXT need to be replaced with broadcast Ids.");
+    if (g_textsWarning && chosen_creature.empty())
+        printf("\nWarning: Some negative text ids  need to be manually replaced.");
     if (!g_creatureSpellLists.empty())
-        printf("\nWarning: Remember to assign zone name in `creature_spells` table.");
+        printf("\nWarning: Remember to assign zone names in `creature_spells` table.");
     getchar();
 
     myfile.close();

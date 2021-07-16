@@ -187,4 +187,19 @@ namespace CMaNGOS
         float orientation;
         uint32 SpawnTimeSecs;
     };
+
+    struct EventAIText
+    {
+        int32 entry = 0;
+        std::string text;
+        uint32 chatType = 0;
+        uint32 emoteId = 0;
+    };
+
+    struct BroadcastText
+    {
+        uint32 entry = 0;
+        std::string maleText;
+        std::string femaleText ;
+    };
 }
