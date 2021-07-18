@@ -12,6 +12,7 @@
 #include "Database\Database.h"
 #include "Defines\CMaNGOS.h"
 #include "Defines\VMaNGOS.h"
+#include "Defines\SharedDefines.h"
 
 std::string EscapeString(char const* unescapedString)
 {
@@ -65,6 +66,7 @@ std::unordered_map<uint32, CMaNGOS::BroadcastText> g_broadcastTexts;
 std::set<int32> g_notFoundTexts;
 std::vector<std::string> g_textUpdates;
 bool g_textsWarning = false;
+bool g_conditionsWarning = false;
 
 uint32 ConvertEventAiText(int32 textId)
 {
@@ -100,7 +102,15 @@ uint32 ConvertEventAiText(int32 textId)
 
 std::unordered_map<uint32, CMaNGOS::EventAISummon> g_summonPositions;
 std::unordered_map<uint32, std::string> g_creatureNames;
-std::unordered_map<uint32, std::string> g_spellNames;
+std::unordered_map<uint32, SpellEntry> g_spellTemplate;
+
+SpellEntry const* GetSpellEntry(uint32 spellId)
+{
+    auto itr = g_spellTemplate.find(spellId);
+    if (itr != g_spellTemplate.end())
+        return &itr->second;
+    return nullptr;
+}
 
 bool ProcessEvent(uint32 id, uint32& event_type, int32& event_param1, int32& event_param2, int32& event_param3, int32& event_param4, uint32& condition_id)
 {
@@ -299,9 +309,12 @@ VMaNGOS::ScriptInfo* ProcessAction(uint32 id, uint32 action_type, int32 action_p
                 pScriptInfo->raw.data[4] |= VMaNGOS::SF_GENERAL_SWAP_FINAL_TARGETS;
             
             if (action_param3 & CMaNGOS::CAST_MAIN_SPELL)
+            {
                 pScriptInfo->castSpell.flags |= VMaNGOS::CF_MAIN_RANGED_SPELL;
+                printf("Warning: Spell %u has CAST_MAIN_SPELL flag, but is cast from EventAI.\n", action_param1);
+            }
 
-            pScriptInfo->comment = "Cast Spell " + EscapeString(g_spellNames[action_param1].c_str());
+            pScriptInfo->comment = "Cast Spell " + g_spellTemplate[action_param1].SpellName;
             return pScriptInfo;
         }
         case CMaNGOS::ACTION_T_SPAWN:
@@ -318,7 +331,7 @@ VMaNGOS::ScriptInfo* ProcessAction(uint32 id, uint32 action_type, int32 action_p
                 pScriptInfo->summonCreature.despawnType = VMaNGOS::TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT;
 
             pScriptInfo->summonCreature.despawnDelay = action_param3;
-            pScriptInfo->comment = "Summon Creature " + EscapeString(g_creatureNames[action_param1].c_str());
+            pScriptInfo->comment = "Summon Creature " + g_creatureNames[action_param1];
             return pScriptInfo;
         }
         case CMaNGOS::ACTION_T_THREAT_SINGLE_PCT:
@@ -532,7 +545,7 @@ VMaNGOS::ScriptInfo* ProcessAction(uint32 id, uint32 action_type, int32 action_p
             pScriptInfo->z = (*i).second.position_z;
             pScriptInfo->o = (*i).second.orientation;
 
-            pScriptInfo->comment = "Summon Creature " + EscapeString(g_creatureNames[action_param1].c_str());
+            pScriptInfo->comment = "Summon Creature " + g_creatureNames[action_param1];
             return pScriptInfo;
         }
         case CMaNGOS::ACTION_T_KILLED_MONSTER:
@@ -571,7 +584,7 @@ VMaNGOS::ScriptInfo* ProcessAction(uint32 id, uint32 action_type, int32 action_p
             pScriptInfo = new VMaNGOS::ScriptInfo();
             pScriptInfo->command = VMaNGOS::SCRIPT_COMMAND_UPDATE_ENTRY;
             pScriptInfo->updateEntry.creatureEntry = action_param1;
-            pScriptInfo->comment = "Update Entry to " + EscapeString(g_creatureNames[action_param1].c_str());
+            pScriptInfo->comment = "Update Entry to " + g_creatureNames[action_param1];
             return pScriptInfo;
         }
         case CMaNGOS::ACTION_T_DIE:
@@ -765,40 +778,99 @@ VMaNGOS::ScriptInfo* ProcessAction(uint32 id, uint32 action_type, int32 action_p
 
 std::unordered_map<uint32 /*creatureId*/, std::vector<VMaNGOS::CreatureSpellsEntry>> g_creatureSpellLists;
 
-void AddSpellCastToCreatureSpellsList(uint32 creatureId, uint32 eventChance, uint32 eventFlags, uint32 spellId, uint32 targetType, uint32 castFlags, uint32 delayInitialMin, uint32 delayInitialMax, uint32 delayRepeatMin, uint32 delayRepeatMax)
+void AddSpellCastToCreatureSpellsList(uint32 creatureId, uint32 eventType, uint32 eventChance, uint32 eventFlags, uint32 eventParam1, uint32 eventParam2, uint32 eventParam3, uint32 eventParam4, uint32 spellId, uint32 targetType, uint32 castFlags)
 {
     VMaNGOS::CreatureSpellsEntry spellList;
     spellList.spellId = spellId;
     spellList.probability = eventChance;
-    spellList.delayInitialMin = delayInitialMin / 1000;
-    spellList.delayInitialMax = delayInitialMax / 1000;
-    spellList.delayRepeatMin = delayRepeatMin / 1000;
-    spellList.delayRepeatMax = delayRepeatMax / 1000;
+
+    switch (eventType)
+    {
+        case VMaNGOS::EVENT_T_TIMER:
+        {
+            spellList.delayInitialMin = eventParam1 / 1000;
+            spellList.delayInitialMax = eventParam2 / 1000;
+            spellList.delayRepeatMin = eventParam3 / 1000;
+            spellList.delayRepeatMax = eventParam4 / 1000;
+            break;
+        }
+        case VMaNGOS::EVENT_T_TARGET_CASTING:
+        {
+            spellList.delayRepeatMin = eventParam1 / 1000;
+            spellList.delayRepeatMax = eventParam2 / 1000;
+            spellList.castFlags |= VMaNGOS::CF_TARGET_CASTING;
+            break;
+        }
+        case VMaNGOS::EVENT_T_RANGE:
+        {
+            if (eventParam1 == 5)
+                spellList.castFlags |= VMaNGOS::CF_NOT_IN_MELEE;
+            else if (eventParam2 == 5)
+                spellList.castFlags |= VMaNGOS::CF_ONLY_IN_MELEE;
+
+            spellList.delayRepeatMin = eventParam3 / 1000;
+            spellList.delayRepeatMax = eventParam4 / 1000;
+            break;
+        }
+        default:
+        {
+            printf("Error: Unsupported event type %u in AddSpellCastToCreatureSpellsList!\n", eventType);
+            break;
+        }
+    }
 
     ConvertTargetType(targetType, spellList.castTarget, spellList.targetParam1, spellList.targetParam2, nullptr);
 
     if (castFlags & CMaNGOS::CAST_INTERRUPT_PREVIOUS)
         spellList.castFlags |= VMaNGOS::CF_INTERRUPT_PREVIOUS;
+
     if (castFlags & CMaNGOS::CAST_TRIGGERED)
         spellList.castFlags |= VMaNGOS::CF_TRIGGERED;
+
     if (castFlags & CMaNGOS::CAST_FORCE_CAST)
         spellList.castFlags |= VMaNGOS::CF_FORCE_CAST;
+
     if (castFlags & CMaNGOS::CAST_NO_MELEE_IF_OOM)
         printf("Error: Unsupported cast flag CAST_NO_MELEE_IF_OOM for spell %u!\n", spellId);
+
     if (castFlags & CMaNGOS::CAST_FORCE_TARGET_SELF)
     {
         spellList.castTarget = VMaNGOS::TARGET_T_PROVIDED_TARGET;
         spellList.targetParam1 = 0;
         spellList.targetParam2 = 0;
     }
+
     if (castFlags & CMaNGOS::CAST_AURA_NOT_PRESENT)
         spellList.castFlags |= VMaNGOS::CF_AURA_NOT_PRESENT;
+
     if (castFlags & CMaNGOS::CAST_IGNORE_UNSELECTABLE_TARGET)
         printf("Error: Unsupported cast flag CAST_IGNORE_UNSELECTABLE_TARGET for spell %u!\n", spellId);
+
     if (castFlags & CMaNGOS::CAST_SWITCH_CASTER_TARGET)
         printf("Error: Unsupported cast flag CAST_SWITCH_CASTER_TARGET for spell %u!\n", spellId);
+
     if (castFlags & CMaNGOS::CAST_MAIN_SPELL)
-        spellList.castFlags |= VMaNGOS::CF_MAIN_RANGED_SPELL;
+    {
+        SpellEntry const* pSpellEntry = GetSpellEntry(spellId);
+        if (!(pSpellEntry && pSpellEntry->RangeIndex == SPELL_RANGE_IDX_COMBAT))
+        {
+            if (spellList.delayRepeatMin < 10 && spellList.delayRepeatMax < 10)
+            {
+                if (spellList.delayRepeatMin > 4 || spellList.delayRepeatMax > 4)
+                {
+                    printf("Warning: Main spell %u has repeat delay above 4 seconds. Reducing delay.\n", spellId);
+                    spellList.delayRepeatMin = 2;
+                    spellList.delayRepeatMax = 4;
+                }
+                spellList.castFlags |= VMaNGOS::CF_MAIN_RANGED_SPELL;
+            }
+            else
+                printf("Warning: Main spell %u has repeat delay above 10 seconds. Removing flag.\n", spellId);
+        }
+        else
+            printf("Warning: Main spell %u uses melee range. Removing flag.\n", spellId);
+    }
+
     if (castFlags & CMaNGOS::CAST_PLAYER_ONLY)
     {
         switch (spellList.castTarget)
@@ -818,15 +890,19 @@ void AddSpellCastToCreatureSpellsList(uint32 creatureId, uint32 eventChance, uin
 
         spellList.targetParam1 |= VMaNGOS::SELECT_FLAG_PLAYER;
     }
+
     if (castFlags & CMaNGOS::CAST_DISTANCE_YOURSELF)
         printf("Error: Unsupported cast flag CAST_DISTANCE_YOURSELF for spell %u!\n", spellId);
+
     if (castFlags & CMaNGOS::CAST_TARGET_CASTING)
         spellList.castFlags |= VMaNGOS::CF_TARGET_CASTING;
+
     if (castFlags & CMaNGOS::CAST_ONLY_XYZ)
         printf("Error: Unsupported cast flag CAST_ONLY_XYZ for spell %u!\n", spellId);
 
     if (eventFlags & CMaNGOS::EFLAG_RANGED_MODE_ONLY)
         spellList.castFlags |= VMaNGOS::CF_NOT_IN_MELEE;
+
     if (eventFlags & CMaNGOS::EFLAG_MELEE_MODE_ONLY)
     {
         spellList.castFlags |= VMaNGOS::CF_ONLY_IN_MELEE;
@@ -871,6 +947,24 @@ void ExportCreatureSpellList(std::ofstream& myfile, uint32 creatureId)
     }
 }
 
+bool CanConvertRangedEventToSpellList(uint32 spellId, uint32 castFlags, uint32 rangeMin, uint32 rangeMax)
+{
+    SpellEntry const* pSpellEntry = GetSpellEntry(spellId);
+    if (!pSpellEntry)
+        return false;
+
+    if (pSpellEntry->RangeIndex == SPELL_RANGE_IDX_SELF_ONLY)
+        return false;
+
+    if (pSpellEntry->IsAreaOfEffectSpell())
+        return false;
+
+    if (castFlags & CMaNGOS::CAST_MAIN_SPELL)
+        return true;
+
+    return pSpellEntry->GetSpellMinRange() == rangeMin && pSpellEntry->GetSpellMaxRange() == rangeMax;
+}
+
 // We need separate non-coflicting ids for events that choose a random action. Hopefully no creature has more than 50 events.
 #define RANDOM_ACTION_OFFSET 50
 
@@ -895,20 +989,6 @@ int main()
         return 1;
     }
 
-    printf("This tool converts CMaNGOS EventAI scripts to the format used in VMaNGOS.\n");
-    printf("If you only want to convert the script of a single creature, enter its id.\n");
-    printf("Leave this empty if you wish to convert the entire scripts table instead.\n");
-    printf("Creature Id: ");
-
-    std::string chosen_creature;
-    getline(std::cin, chosen_creature);
-
-    //                           0     1              2             3                           4               5              6               7               8               9               10              11                12                13                14              15                16                17                18              19                20                21                22
-    std::string query = "SELECT `id`, `creature_id`, `event_type`, `event_inverse_phase_mask`, `event_chance`, `event_flags`, `event_param1`, `event_param2`, `event_param3`, `event_param4`, `action1_type`, `action1_param1`, `action1_param2`, `action1_param3`, `action2_type`, `action2_param1`, `action2_param2`, `action2_param3`, `action3_type`, `action3_param1`, `action3_param2`, `action3_param3`, `comment` FROM `creature_ai_scripts`";
-    if (IsNumber(chosen_creature))
-        query += " WHERE `creature_id` = " + chosen_creature;
-    query += " ORDER BY creature_id, id";
-
     // Load creature names to use in the action comment.
     printf("Loading creature names.\n");
     if (std::shared_ptr<QueryResult> result = GameDb.Query("SELECT `entry`, `name` FROM `creature_template`"))
@@ -926,16 +1006,22 @@ int main()
 
     // Load spell names to use in the action comment.
     printf("Loading spell names.\n");
-    if (std::shared_ptr<QueryResult> result = GameDb.Query("SELECT `Id`, `SpellName` FROM `spell_template`"))
+    if (std::shared_ptr<QueryResult> result = GameDb.Query("SELECT `Id`, `SpellName`, `RangeIndex`, `EffectImplicitTargetA1`, `EffectImplicitTargetB1`, `EffectImplicitTargetA2`, `EffectImplicitTargetB2`, `EffectImplicitTargetA3`, `EffectImplicitTargetB3` FROM `spell_template`"))
     {
         do
         {
             DbField* pFields = result->fetchCurrentRow();
 
             uint32 entry = pFields[0].getUInt32();
-            std::string name = pFields[1].getCppString();
-
-            g_spellNames[entry] = name;
+            SpellEntry& spellEntry = g_spellTemplate[entry];
+            spellEntry.SpellName = pFields[1].getCppString();
+            spellEntry.RangeIndex = pFields[2].getUInt32();
+            spellEntry.EffectImplicitTargetA[0] = pFields[3].getUInt32();
+            spellEntry.EffectImplicitTargetB[0] = pFields[4].getUInt32();
+            spellEntry.EffectImplicitTargetA[1] = pFields[5].getUInt32();
+            spellEntry.EffectImplicitTargetB[1] = pFields[6].getUInt32();
+            spellEntry.EffectImplicitTargetA[2] = pFields[7].getUInt32();
+            spellEntry.EffectImplicitTargetB[2] = pFields[8].getUInt32();
         } while (result->NextRow());
     }
 
@@ -997,9 +1083,24 @@ int main()
         } while (result->NextRow());
     }
 
+    system("cls");
+    printf("This tool converts CMaNGOS EventAI scripts to the format used in VMaNGOS.\n");
+    printf("If you only want to convert the script of a single creature, enter its id.\n");
+    printf("Leave this empty if you wish to convert the entire scripts table instead.\n");
+    printf("Creature Id: ");
+
+    std::string chosen_creature;
+    getline(std::cin, chosen_creature);
+
+    //                           0     1              2             3                           4               5              6               7               8               9               10              11                12                13                14              15                16                17                18              19                20                21                22
+    std::string query = "SELECT `id`, `creature_id`, `event_type`, `event_inverse_phase_mask`, `event_chance`, `event_flags`, `event_param1`, `event_param2`, `event_param3`, `event_param4`, `action1_type`, `action1_param1`, `action1_param2`, `action1_param3`, `action2_type`, `action2_param1`, `action2_param2`, `action2_param3`, `action3_type`, `action3_param1`, `action3_param2`, `action3_param3`, `comment` FROM `creature_ai_scripts`";
+    if (IsNumber(chosen_creature))
+        query += " WHERE `creature_id` = " + chosen_creature;
+    query += " ORDER BY creature_id, id";
+
     uint32 totalCount = 0;
     uint32 lastCreatureId = 0;
-    printf("Converting scripts.\n");
+    printf("\nConverting scripts...\n");
     if (std::shared_ptr<QueryResult> result = GameDb.Query(query.c_str()))
     {
         do
@@ -1050,6 +1151,9 @@ int main()
                 lastCreatureId = creature_id;
                 continue;
             }
+
+            if (condition_id)
+                g_conditionsWarning = true;
             
             std::vector<std::unique_ptr<VMaNGOS::ScriptInfo>> vScriptActions;
 
@@ -1068,9 +1172,10 @@ int main()
             int32 const action3_param2 = pFields[20].getInt32();
             int32 const action3_param3 = pFields[21].getInt32();
 
-            if (event_type == VMaNGOS::EVENT_T_TIMER && action1_type == CMaNGOS::ACTION_T_CAST && !action2_type && !action3_type && !event_inverse_phase_mask && (event_flags & VMaNGOS::EFLAG_REPEATABLE))
+            if ((event_type == VMaNGOS::EVENT_T_TIMER || event_type == VMaNGOS::EVENT_T_TARGET_CASTING || (event_type == VMaNGOS::EVENT_T_RANGE && CanConvertRangedEventToSpellList(action1_param1, action1_param3, event_param1, event_param2))) &&
+                action1_type == CMaNGOS::ACTION_T_CAST && !action2_type && !action3_type && !event_inverse_phase_mask && (event_flags & VMaNGOS::EFLAG_REPEATABLE))
             {
-                AddSpellCastToCreatureSpellsList(creature_id, event_chance, event_flags, action1_param1, action1_param2, action1_param3, event_param1, event_param2, event_param3, event_param4);
+                AddSpellCastToCreatureSpellsList(creature_id, event_type, event_chance, event_flags, event_param1, event_param2, event_param3, event_param4, action1_param1, action1_param2, action1_param3);
                 lastCreatureId = creature_id;
                 continue;
             }
@@ -1197,6 +1302,8 @@ int main()
     printf("\nDone! Converted %u creature events and their associated actions.", totalCount);
     if (g_textsWarning && chosen_creature.empty())
         printf("\nWarning: Some negative text ids  need to be manually replaced.");
+    if (g_conditionsWarning)
+        printf("\nWarning: Some condition ids  need to be manually replaced.");
     if (!g_creatureSpellLists.empty())
         printf("\nWarning: Remember to assign zone names in `creature_spells` table.");
     getchar();
